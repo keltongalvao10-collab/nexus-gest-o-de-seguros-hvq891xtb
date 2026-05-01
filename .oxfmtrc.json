@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "ignorePatterns": [
+    "dist",
+    "dist-ssr",
+    "build",
+    "coverage",
+    ".pnpm-store",
+    ".pnpm",
+    ".oxfmtrc.json",
+    ".skip.config.json",
+    "components.json",
+    ".oxlintrc.json",
+    "index.html",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "postcss.config.js",
+    "README.md",
+    "tests/",
+    "tsconfig.*",
+    "vite.config.ts"
+  ]
+}

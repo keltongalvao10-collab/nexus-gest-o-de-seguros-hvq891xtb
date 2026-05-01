@@ -1,0 +1,4 @@
+injectWorkspacePackages: false
+onlyBuiltDependencies:
+  - '@swc/core'
+  - esbuild
