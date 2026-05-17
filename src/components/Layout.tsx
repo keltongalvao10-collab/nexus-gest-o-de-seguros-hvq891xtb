@@ -42,7 +42,7 @@ import { Logo } from './Logo'
 
 const menuItems = [
   { title: 'Dashboard', icon: LayoutDashboard, path: '/' },
-  { title: 'Apólices', icon: FileText, path: '/apolices' },
+  { title: 'Painel de Controle', icon: FileText, path: '/apolices' },
   { title: 'Parcelas', icon: DollarSign, path: '/parcelas' },
   { title: 'Comissões', icon: PieChart, path: '/comissoes' },
   { title: 'Extratos', icon: List, path: '/extratos' },
@@ -117,7 +117,11 @@ export default function Layout() {
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <header className="h-16 flex items-center justify-between px-8 bg-white border-b border-gray-200 sticky top-0 z-10">
             <h1 className="text-xl font-semibold text-gray-800 capitalize">
-              {location.pathname === '/' ? 'Dashboard' : location.pathname.slice(1)}
+              {location.pathname === '/'
+                ? 'Dashboard'
+                : location.pathname === '/apolices'
+                  ? 'Painel de Controle'
+                  : location.pathname.slice(1).replace(/-/g, ' ')}
             </h1>
             <div className="flex items-center gap-6">
               <Button
