@@ -1,8 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import Layout from './components/Layout'
+import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import Login from './pages/Login'
 import Index from './pages/Index'
 import Apolices from './pages/Apolices'
@@ -22,36 +23,46 @@ const PlaceholderPage = ({ title }: { title: string }) => (
   </div>
 )
 
+const ProtectedRoute = () => {
+  const { isAuthenticated, loading } = useAuth()
+  if (loading) return null
+  return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />
+}
+
 const App = () => (
-  <BrowserRouter future={{ v7_startTransition: false, v7_relativeSplatPath: false }}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <Routes>
-        <Route path="/login" element={<Login />} />
+  <AuthProvider>
+    <BrowserRouter future={{ v7_startTransition: false, v7_relativeSplatPath: false }}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-        <Route element={<Layout />}>
-          <Route path="/" element={<Index />} />
-          <Route path="/apolices" element={<Apolices />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Index />} />
+              <Route path="/apolices" element={<Apolices />} />
 
-          {/* Placeholders for other routes defined in the specification */}
-          <Route path="/parcelas" element={<PlaceholderPage title="Parcelas" />} />
-          <Route path="/comissoes" element={<PlaceholderPage title="Comissões" />} />
-          <Route path="/extratos" element={<PlaceholderPage title="Extratos" />} />
-          <Route path="/clientes" element={<PlaceholderPage title="Clientes" />} />
-          <Route path="/seguradoras" element={<PlaceholderPage title="Seguradoras" />} />
-          <Route path="/relatorios" element={<PlaceholderPage title="Relatórios" />} />
+              {/* Placeholders for other routes defined in the specification */}
+              <Route path="/parcelas" element={<PlaceholderPage title="Parcelas" />} />
+              <Route path="/comissoes" element={<PlaceholderPage title="Comissões" />} />
+              <Route path="/extratos" element={<PlaceholderPage title="Extratos" />} />
+              <Route path="/clientes" element={<PlaceholderPage title="Clientes" />} />
+              <Route path="/seguradoras" element={<PlaceholderPage title="Seguradoras" />} />
+              <Route path="/relatorios" element={<PlaceholderPage title="Relatórios" />} />
 
-          <Route path="/repasses" element={<PlaceholderPage title="Repasses" />} />
-          <Route path="/usuarios" element={<PlaceholderPage title="Usuários" />} />
-          <Route path="/configuracoes" element={<PlaceholderPage title="Configurações" />} />
-          <Route path="/importacao" element={<PlaceholderPage title="Importação" />} />
-        </Route>
+              <Route path="/repasses" element={<PlaceholderPage title="Repasses" />} />
+              <Route path="/usuarios" element={<PlaceholderPage title="Usuários" />} />
+              <Route path="/configuracoes" element={<PlaceholderPage title="Configurações" />} />
+              <Route path="/importacao" element={<PlaceholderPage title="Importação" />} />
+            </Route>
+          </Route>
 
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </TooltipProvider>
-  </BrowserRouter>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </TooltipProvider>
+    </BrowserRouter>
+  </AuthProvider>
 )
 
 export default App

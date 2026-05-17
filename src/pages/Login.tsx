@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
+import { useAuth } from '@/hooks/use-auth'
+import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,12 +13,29 @@ import { PlayCircle } from 'lucide-react'
 
 export default function Login() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('admin@vipprime.com.br')
-  const [password, setPassword] = useState('password123')
+  const [email, setEmail] = useState('kelton.galvao10@gmail.com')
+  const [password, setPassword] = useState('Skip@Pass')
+  const { signIn, isAuthenticated, loading } = useAuth()
+  const { toast } = useToast()
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      navigate('/')
+    }
+  }, [isAuthenticated, loading, navigate])
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    navigate('/')
+    const { error } = await signIn(email, password)
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro de autenticação',
+        description: 'Verifique seu e-mail e senha.',
+      })
+    } else {
+      navigate('/')
+    }
   }
 
   return (

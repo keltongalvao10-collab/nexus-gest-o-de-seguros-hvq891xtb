@@ -29,14 +29,16 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { mockApolices } from '@/lib/mock-data'
-import { fetchTable, insertRow } from '@/lib/supabase'
+import pb from '@/lib/pocketbase/client'
+import { useRealtime } from '@/hooks/use-realtime'
+import { extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 
 export default function Apolices() {
   const [searchTerm, setSearchTerm] = useState('')
-  const [apolices, setApolices] = useState(mockApolices)
+  const [apolices, setApolices] = useState<any[]>([])
   const [open, setOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const { toast } = useToast()
 
   const [formData, setFormData] = useState({
@@ -50,26 +52,28 @@ export default function Apolices() {
       .toISOString()
       .split('T')[0],
     valorPremio: '',
-    status: 'Aguard. Apólice',
+    status: 'pending',
   })
 
   const loadApolices = async () => {
-    const data = await fetchTable(
-      'apolices',
-      'select=*,clientes(nome),seguradoras(razao_social)&order=data_inicio.desc',
-    )
-    if (data && data.length > 0) {
+    try {
+      const data = await pb.collection('policies').getFullList({
+        sort: '-created',
+        expand: 'client,insurer',
+      })
       setApolices(
         data.map((a: any) => ({
-          id: a.numero_apolice,
-          cliente: a.clientes?.nome || 'Desconhecido',
-          seguradora: a.seguradoras?.razao_social || 'Desconhecida',
-          ramo: a.ramo,
-          data: new Date(a.data_inicio).toLocaleDateString('pt-BR'),
-          premio: Number(a.valor_premio),
+          id: a.policy_number,
+          cliente: a.expand?.client?.name || 'Desconhecido',
+          seguradora: a.expand?.insurer?.name || 'Desconhecida',
+          ramo: 'Auto',
+          data: new Date(a.start_date).toLocaleDateString('pt-BR'),
+          premio: Number(a.total_premium),
           status: a.status,
         })),
       )
+    } catch (e) {
+      console.error(e)
     }
   }
 
@@ -77,52 +81,58 @@ export default function Apolices() {
     loadApolices()
   }, [])
 
+  useRealtime('policies', () => {
+    loadApolices()
+  })
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setFieldErrors({})
     try {
       // 1. Resolve Cliente
-      let clienteRes = await fetchTable(`clientes?documento=eq.${formData.clienteDocumento}`)
       let clienteId
-      if (clienteRes && clienteRes.length > 0) {
-        clienteId = clienteRes[0].id
-      } else {
-        const newCliente = await insertRow('clientes', {
-          nome: formData.clienteNome,
-          documento: formData.clienteDocumento,
+      try {
+        const clienteRes = await pb
+          .collection('clients')
+          .getFirstListItem(`document="${formData.clienteDocumento}"`)
+        clienteId = clienteRes.id
+      } catch {
+        const newCliente = await pb.collection('clients').create({
+          name: formData.clienteNome,
+          document: formData.clienteDocumento,
         })
-        clienteId = newCliente[0]?.id || newCliente.id
+        clienteId = newCliente.id
       }
 
       // 2. Resolve Seguradora
-      let segRes = await fetchTable(
-        `seguradoras?razao_social=eq.${encodeURIComponent(formData.seguradoraNome)}`,
-      )
       let seguradoraId
-      if (segRes && segRes.length > 0) {
-        seguradoraId = segRes[0].id
-      } else {
+      try {
+        const segRes = await pb
+          .collection('insurers')
+          .getFirstListItem(`name~"${formData.seguradoraNome}"`)
+        seguradoraId = segRes.id
+      } catch {
         const dummyCnpj = Math.floor(Math.random() * 100000000000000).toString()
-        const newSeg = await insertRow('seguradoras', {
-          razao_social: formData.seguradoraNome,
-          cnpj: dummyCnpj,
+        const newSeg = await pb.collection('insurers').create({
+          name: formData.seguradoraNome,
+          document: dummyCnpj,
         })
-        seguradoraId = newSeg[0]?.id || newSeg.id
+        seguradoraId = newSeg.id
       }
 
       // 3. Insert Apolice
-      await insertRow('apolices', {
-        numero_apolice: formData.numeroApolice,
-        cliente_id: clienteId,
-        seguradora_id: seguradoraId,
-        ramo: formData.ramo,
-        data_inicio: formData.dataInicio,
-        data_vencimento: formData.dataVencimento,
-        valor_premio: parseFloat(formData.valorPremio),
+      await pb.collection('policies').create({
+        policy_number: formData.numeroApolice,
+        client: clienteId,
+        insurer: seguradoraId,
+        start_date: new Date(formData.dataInicio + 'T12:00:00Z').toISOString(),
+        end_date: new Date(formData.dataVencimento + 'T12:00:00Z').toISOString(),
+        total_premium: parseFloat(formData.valorPremio),
         status: formData.status,
       })
 
-      toast({ title: 'Sucesso', description: 'Apólice registrada e sincronizada com o Supabase.' })
+      toast({ title: 'Sucesso', description: 'Apólice registrada e sincronizada.' })
       setOpen(false)
       loadApolices()
 
@@ -137,13 +147,15 @@ export default function Apolices() {
           .toISOString()
           .split('T')[0],
         valorPremio: '',
-        status: 'Aguard. Apólice',
+        status: 'pending',
       })
     } catch (err: any) {
+      const errors = extractFieldErrors(err)
+      setFieldErrors(errors)
       toast({
         variant: 'destructive',
         title: 'Erro de Persistência',
-        description: err.message || 'Verifique se as tabelas foram criadas no Supabase.',
+        description: 'Verifique os campos preenchidos e tente novamente.',
       })
     } finally {
       setIsLoading(false)
@@ -152,13 +164,13 @@ export default function Apolices() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'Vigente':
+      case 'active':
         return <Badge className="bg-[#2ECC71] text-white hover:bg-[#2ECC71]">Vigente</Badge>
-      case 'Aguard. Apólice':
+      case 'pending':
         return <Badge className="bg-blue-400 text-white hover:bg-blue-400">Aguard. Apólice</Badge>
-      case 'Cancelada':
+      case 'canceled':
         return <Badge className="bg-[#E74C3C] text-white hover:bg-[#E74C3C]">Cancelada</Badge>
-      case 'Renovação':
+      case 'expired':
         return <Badge className="bg-[#9B59B6] text-white hover:bg-[#9B59B6]">Renovação</Badge>
       default:
         return <Badge variant="outline">{status}</Badge>
@@ -211,6 +223,7 @@ export default function Apolices() {
                       value={formData.clienteNome}
                       onChange={(e) => setFormData({ ...formData, clienteNome: e.target.value })}
                     />
+                    {fieldErrors.name && <p className="text-sm text-red-500">{fieldErrors.name}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="clienteDocumento">CPF/CNPJ</Label>
@@ -223,6 +236,9 @@ export default function Apolices() {
                         setFormData({ ...formData, clienteDocumento: e.target.value })
                       }
                     />
+                    {fieldErrors.document && (
+                      <p className="text-sm text-red-500">{fieldErrors.document}</p>
+                    )}
                   </div>
                 </div>
 
@@ -235,6 +251,9 @@ export default function Apolices() {
                     value={formData.seguradoraNome}
                     onChange={(e) => setFormData({ ...formData, seguradoraNome: e.target.value })}
                   />
+                  {fieldErrors.insurer && (
+                    <p className="text-sm text-red-500">{fieldErrors.insurer}</p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -247,6 +266,9 @@ export default function Apolices() {
                       value={formData.numeroApolice}
                       onChange={(e) => setFormData({ ...formData, numeroApolice: e.target.value })}
                     />
+                    {fieldErrors.policy_number && (
+                      <p className="text-sm text-red-500">{fieldErrors.policy_number}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="ramo">Ramo</Label>
@@ -278,6 +300,9 @@ export default function Apolices() {
                       value={formData.dataInicio}
                       onChange={(e) => setFormData({ ...formData, dataInicio: e.target.value })}
                     />
+                    {fieldErrors.start_date && (
+                      <p className="text-sm text-red-500">{fieldErrors.start_date}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="dataVencimento">Data Vencimento</Label>
@@ -288,6 +313,9 @@ export default function Apolices() {
                       value={formData.dataVencimento}
                       onChange={(e) => setFormData({ ...formData, dataVencimento: e.target.value })}
                     />
+                    {fieldErrors.end_date && (
+                      <p className="text-sm text-red-500">{fieldErrors.end_date}</p>
+                    )}
                   </div>
                 </div>
 
@@ -303,6 +331,9 @@ export default function Apolices() {
                       value={formData.valorPremio}
                       onChange={(e) => setFormData({ ...formData, valorPremio: e.target.value })}
                     />
+                    {fieldErrors.total_premium && (
+                      <p className="text-sm text-red-500">{fieldErrors.total_premium}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="status">Status</Label>
@@ -314,12 +345,15 @@ export default function Apolices() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Vigente">Vigente</SelectItem>
-                        <SelectItem value="Aguard. Apólice">Aguard. Apólice</SelectItem>
-                        <SelectItem value="Renovação">Renovação</SelectItem>
-                        <SelectItem value="Cancelada">Cancelada</SelectItem>
+                        <SelectItem value="active">Vigente</SelectItem>
+                        <SelectItem value="pending">Aguard. Apólice</SelectItem>
+                        <SelectItem value="expired">Renovação</SelectItem>
+                        <SelectItem value="canceled">Cancelada</SelectItem>
                       </SelectContent>
                     </Select>
+                    {fieldErrors.status && (
+                      <p className="text-sm text-red-500">{fieldErrors.status}</p>
+                    )}
                   </div>
                 </div>
 
