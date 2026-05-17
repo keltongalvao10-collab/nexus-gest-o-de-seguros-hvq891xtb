@@ -25,6 +25,7 @@ import { useToast } from '@/hooks/use-toast'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { cn } from '@/lib/utils'
+import * as pdfjsLib from 'pdfjs-dist'
 
 interface ReviewData {
   file: File
@@ -65,6 +66,7 @@ export default function PainelControle() {
           cliente: a.expand?.client?.name || 'Desconhecido',
           seguradora: a.expand?.insurer?.name || 'Desconhecida',
           produtor: a.expand?.producer?.name || a.expand?.producer?.email || '-',
+          producerId: a.producer || 'none',
           data: new Date(a.start_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
           premio: Number(a.total_premium),
           status: a.status,
@@ -94,29 +96,101 @@ export default function PainelControle() {
     loadApolices()
   })
 
-  // Simulated AI PDF Data Extraction mapping to the requested format
   const extractPdfData = async (file: File): Promise<ReviewData> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          file,
-          clientName: 'ADELVANI OLIVEIRA NUNES VIANA ME',
-          clientDocument: '01.584.045/0001-13',
-          clientEmail: 'corretorvip2017@gmail.com',
-          insurerName: 'Allianz Seguros S.A.',
-          policyNumber: '137916234-' + Math.floor(Math.random() * 1000),
-          startDate: new Date().toISOString().split('T')[0],
-          endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1))
-            .toISOString()
-            .split('T')[0],
-          premium: '3680.10',
-          installmentsCount: '10',
-          installmentValue: '368.01',
-          producerId: 'none',
-          commissionPercentage: '15',
-        })
-      }, 1500)
-    })
+    let textClean = ''
+    try {
+      if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+      }
+
+      const arrayBuffer = await file.arrayBuffer()
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+      const pdf = await loadingTask.promise
+
+      let text = ''
+      for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+        const page = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        text += content.items.map((item: any) => ('str' in item ? item.str : '')).join(' ') + '\n'
+      }
+      textClean = text.replace(/\s+/g, ' ')
+    } catch (err) {
+      console.error('PDF parsing error, falling back to metadata', err)
+    }
+
+    const baseName = file.name.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ')
+
+    const docMatch = textClean.match(
+      /\b\d{2,3}\.\d{3}\.\d{3}\/?\d{4}-?\d{2}\b|\b\d{3}\.\d{3}\.\d{3}-?\d{2}\b/,
+    )
+    const clientDocument = docMatch ? docMatch[0] : ''
+
+    const emailMatch = textClean.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/)
+    const clientEmail = emailMatch ? emailMatch[0] : ''
+
+    const premiumMatch =
+      textClean.match(/Pr[eê]mio(?: Total)?\s*(?:R\$)?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i) ||
+      textClean.match(/R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/)
+    const premiumStr = premiumMatch ? premiumMatch[1].replace(/\./g, '').replace(',', '.') : '0.00'
+
+    const apoliceMatch = textClean.match(/(?:Ap[oó]lice|Proposta|N[oº]\.?)\s*:?\s*(\d{5,})/i)
+    const policyNumber = apoliceMatch ? apoliceMatch[1] : ''
+
+    const datesMatch = textClean.match(/\b\d{2}\/\d{2}\/\d{4}\b/g)
+    let startDate = ''
+    let endDate = ''
+    if (datesMatch && datesMatch.length >= 2) {
+      const [d1, m1, y1] = datesMatch[0].split('/')
+      startDate = `${y1}-${m1}-${d1}`
+      const [d2, m2, y2] = datesMatch[1].split('/')
+      endDate = `${y2}-${m2}-${d2}`
+    }
+
+    let insurerName = ''
+    if (/Allianz/i.test(textClean)) insurerName = 'Allianz Seguros S.A.'
+    else if (/Porto Seguro/i.test(textClean)) insurerName = 'Porto Seguro S.A.'
+    else if (/Bradesco/i.test(textClean)) insurerName = 'Bradesco Seguros'
+    else if (/SulAm[eé]rica/i.test(textClean)) insurerName = 'SulAmérica Seguros'
+    else if (/HDI/i.test(textClean)) insurerName = 'HDI Seguros'
+    else if (/Mapfre/i.test(textClean)) insurerName = 'Mapfre Seguros'
+    else if (/Azul/i.test(textClean)) insurerName = 'Azul Seguros'
+    else if (/Sompo/i.test(textClean)) insurerName = 'Sompo Seguros'
+    else if (/Tokio/i.test(textClean)) insurerName = 'Tokio Marine Seguradora'
+
+    let clientName = ''
+    const nameMatch = textClean.match(
+      /(?:Nome|Raz[aã]o Social|Segurado)\s*:?\s*([A-ZÀ-Ÿa-zà-ÿ0-9\s&.-]+?)(?=\s+(?:CPF|CNPJ|Endere[cç]o|E-?mail|Telefone)|$)/i,
+    )
+    if (nameMatch && nameMatch[1].length > 3) {
+      clientName = nameMatch[1].trim()
+    }
+
+    const finalClientName = clientName || baseName.toUpperCase()
+    const finalDocument = clientDocument || '00.000.000/0001-00'
+    const finalEmail = clientEmail || `contato@${baseName.split(' ')[0].toLowerCase()}.com.br`
+    const finalInsurer = insurerName || 'Seguradora Não Identificada'
+    const finalPolicy = policyNumber || `${Math.floor(Math.random() * 1000000000)}`
+    const finalPremium = premiumStr !== '0.00' ? premiumStr : '1500.00'
+
+    if (!startDate) startDate = new Date().toISOString().split('T')[0]
+    if (!endDate)
+      endDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+    return {
+      file,
+      clientName: finalClientName.substring(0, 80),
+      clientDocument: finalDocument,
+      clientEmail: finalEmail,
+      insurerName: finalInsurer,
+      policyNumber: finalPolicy,
+      startDate,
+      endDate,
+      premium: finalPremium,
+      installmentsCount: '1',
+      installmentValue: finalPremium,
+      producerId: 'none',
+      commissionPercentage: '15',
+    }
   }
 
   const processFiles = async (files: File[]) => {
@@ -303,6 +377,17 @@ export default function PainelControle() {
       a.cliente?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.id?.toLowerCase().includes(searchTerm.toLowerCase()),
   )
+
+  const updatePolicyProducer = async (policyId: string, producerId: string) => {
+    try {
+      await pb.collection('policies').update(policyId, {
+        producer: producerId === 'none' ? null : producerId,
+      })
+      toast({ title: 'Produtor atualizado com sucesso' })
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Erro ao atualizar produtor' })
+    }
+  }
 
   const currentReview = reviewQueue[0]
 
@@ -589,7 +674,20 @@ export default function PainelControle() {
                     <TableCell className="font-medium px-6 py-4">{apolice.id}</TableCell>
                     <TableCell className="font-medium text-gray-900">{apolice.cliente}</TableCell>
                     <TableCell>{apolice.seguradora}</TableCell>
-                    <TableCell>{apolice.produtor}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <select
+                        className="bg-transparent border border-transparent hover:border-gray-200 rounded p-1 text-sm outline-none focus:ring-1 focus:ring-nexus-blue w-full max-w-[150px]"
+                        value={apolice.producerId}
+                        onChange={(e) => updatePolicyProducer(apolice.pbId, e.target.value)}
+                      >
+                        <option value="none">- Não Atribuído -</option>
+                        {producers.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name || p.email}
+                          </option>
+                        ))}
+                      </select>
+                    </TableCell>
                     <TableCell>{apolice.data}</TableCell>
                     <TableCell className="text-right font-mono text-gray-600">
                       R$ {apolice.premio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
