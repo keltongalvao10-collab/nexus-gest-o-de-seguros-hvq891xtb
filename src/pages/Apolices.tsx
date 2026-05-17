@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Plus, Search, Upload } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Plus, Search, Upload, FileText, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -41,6 +41,7 @@ export default function Apolices() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const { toast } = useToast()
 
+  // Form states
   const [formData, setFormData] = useState({
     clienteNome: '',
     clienteDocumento: '',
@@ -55,6 +56,16 @@ export default function Apolices() {
     status: 'pending',
   })
 
+  // Upload states
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadingPolicyId, setUploadingPolicyId] = useState<string | null>(null)
+  const rowFileInputRef = useRef<HTMLInputElement>(null)
+
+  const [globalFile, setGlobalFile] = useState<File | null>(null)
+  const [isGlobalModalOpen, setIsGlobalModalOpen] = useState(false)
+  const [selectedGlobalPolicy, setSelectedGlobalPolicy] = useState<string>('')
+  const globalFileInputRef = useRef<HTMLInputElement>(null)
+
   const loadApolices = async () => {
     try {
       const data = await pb.collection('policies').getFullList({
@@ -63,6 +74,7 @@ export default function Apolices() {
       })
       setApolices(
         data.map((a: any) => ({
+          pbId: a.id,
           id: a.policy_number,
           cliente: a.expand?.client?.name || 'Desconhecido',
           seguradora: a.expand?.insurer?.name || 'Desconhecida',
@@ -70,6 +82,7 @@ export default function Apolices() {
           data: new Date(a.start_date).toLocaleDateString('pt-BR'),
           premio: Number(a.total_premium),
           status: a.status,
+          documentUrl: a.document_file ? pb.files.getURL(a, a.document_file) : null,
         })),
       )
     } catch (e) {
@@ -84,6 +97,55 @@ export default function Apolices() {
   useRealtime('policies', () => {
     loadApolices()
   })
+
+  // --- Row Level Upload ---
+  const handleRowFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !uploadingPolicyId) return
+
+    setIsUploading(true)
+    const data = new FormData()
+    data.append('document_file', file)
+
+    try {
+      await pb.collection('policies').update(uploadingPolicyId, data)
+      toast({ title: 'Sucesso', description: 'Documento anexado com sucesso.' })
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Erro', description: 'Falha ao anexar documento.' })
+    } finally {
+      setIsUploading(false)
+      setUploadingPolicyId(null)
+      if (rowFileInputRef.current) rowFileInputRef.current.value = ''
+    }
+  }
+
+  // --- Global Button Upload ---
+  const handleGlobalFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setGlobalFile(file)
+      setIsGlobalModalOpen(true)
+    }
+    if (globalFileInputRef.current) globalFileInputRef.current.value = ''
+  }
+
+  const handleGlobalSubmit = async () => {
+    if (!globalFile || !selectedGlobalPolicy) return
+    setIsUploading(true)
+    const data = new FormData()
+    data.append('document_file', globalFile)
+    try {
+      await pb.collection('policies').update(selectedGlobalPolicy, data)
+      toast({ title: 'Sucesso', description: 'Documento anexado com sucesso.' })
+      setIsGlobalModalOpen(false)
+      setGlobalFile(null)
+      setSelectedGlobalPolicy('')
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Erro', description: 'Falha ao anexar documento.' })
+    } finally {
+      setIsUploading(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -196,7 +258,27 @@ export default function Apolices() {
           />
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          <Button variant="outline" className="w-full sm:w-auto bg-white hover:text-nexus-blue">
+          {/* Hidden inputs for file upload */}
+          <input
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            ref={globalFileInputRef}
+            onChange={handleGlobalFileChange}
+          />
+          <input
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            ref={rowFileInputRef}
+            onChange={handleRowFileChange}
+          />
+
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto bg-white hover:text-nexus-blue"
+            onClick={() => globalFileInputRef.current?.click()}
+          >
             <Upload className="mr-2 h-4 w-4" />
             Upload PDF
           </Button>
@@ -372,6 +454,56 @@ export default function Apolices() {
               </form>
             </DialogContent>
           </Dialog>
+
+          {/* Modal for Global Upload File Attach */}
+          <Dialog open={isGlobalModalOpen} onOpenChange={setIsGlobalModalOpen}>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader>
+                <DialogTitle>Anexar Documento</DialogTitle>
+              </DialogHeader>
+              <div className="py-4 space-y-4">
+                <p className="text-sm text-gray-600">
+                  Arquivo selecionado:{' '}
+                  <span className="font-medium text-gray-900">{globalFile?.name}</span>
+                </p>
+                <div className="space-y-2">
+                  <Label>Vincular à Apólice</Label>
+                  <Select value={selectedGlobalPolicy} onValueChange={setSelectedGlobalPolicy}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione uma apólice..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {apolices.map((a: any) => (
+                        <SelectItem key={a.pbId} value={a.pbId}>
+                          {a.id} - {a.cliente}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsGlobalModalOpen(false)
+                    setGlobalFile(null)
+                    setSelectedGlobalPolicy('')
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleGlobalSubmit}
+                  disabled={isUploading || !selectedGlobalPolicy}
+                  className="bg-nexus-blue hover:bg-nexus-navy text-white"
+                >
+                  {isUploading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Anexar PDF
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -387,13 +519,14 @@ export default function Apolices() {
                 <TableHead>Data Início</TableHead>
                 <TableHead className="text-right">Prêmio Total</TableHead>
                 <TableHead className="text-center px-6">Status</TableHead>
+                <TableHead className="text-center">Documento</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredApolices.length > 0 ? (
                 filteredApolices.map((apolice: any) => (
                   <TableRow
-                    key={apolice.id}
+                    key={apolice.pbId}
                     className="cursor-pointer hover:bg-gray-50/80 transition-colors"
                   >
                     <TableCell className="font-medium px-6 py-4">{apolice.id}</TableCell>
@@ -407,11 +540,44 @@ export default function Apolices() {
                     <TableCell className="text-center px-6">
                       {getStatusBadge(apolice.status)}
                     </TableCell>
+                    <TableCell className="text-center">
+                      {apolice.documentUrl ? (
+                        <Button variant="ghost" size="sm" asChild>
+                          <a
+                            href={apolice.documentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-nexus-blue hover:text-nexus-navy"
+                          >
+                            <FileText className="h-4 w-4 mr-1" /> Ver PDF
+                          </a>
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setUploadingPolicyId(apolice.pbId)
+                            rowFileInputRef.current?.click()
+                          }}
+                          disabled={isUploading && uploadingPolicyId === apolice.pbId}
+                          className="text-gray-500 hover:text-nexus-blue"
+                        >
+                          {isUploading && uploadingPolicyId === apolice.pbId ? (
+                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                          ) : (
+                            <Upload className="h-4 w-4 mr-1" />
+                          )}
+                          Upload
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                     Nenhuma apólice encontrada.
                   </TableCell>
                 </TableRow>
