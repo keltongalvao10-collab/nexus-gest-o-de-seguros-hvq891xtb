@@ -38,11 +38,14 @@ interface ReviewData {
   premium: string
   installmentsCount: string
   installmentValue: string
+  producerId: string
+  commissionPercentage: string
 }
 
 export default function PainelControle() {
   const [searchTerm, setSearchTerm] = useState('')
   const [apolices, setApolices] = useState<any[]>([])
+  const [producers, setProducers] = useState<any[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [reviewQueue, setReviewQueue] = useState<ReviewData[]>([])
@@ -53,7 +56,7 @@ export default function PainelControle() {
     try {
       const data = await pb.collection('policies').getFullList({
         sort: '-created',
-        expand: 'client,insurer',
+        expand: 'client,insurer,producer',
       })
       setApolices(
         data.map((a: any) => ({
@@ -61,7 +64,7 @@ export default function PainelControle() {
           id: a.policy_number,
           cliente: a.expand?.client?.name || 'Desconhecido',
           seguradora: a.expand?.insurer?.name || 'Desconhecida',
-          ramo: 'Automóvel',
+          produtor: a.expand?.producer?.name || a.expand?.producer?.email || '-',
           data: new Date(a.start_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
           premio: Number(a.total_premium),
           status: a.status,
@@ -73,15 +76,25 @@ export default function PainelControle() {
     }
   }
 
+  const loadProducers = async () => {
+    try {
+      const users = await pb.collection('users').getFullList()
+      setProducers(users)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   useEffect(() => {
     loadApolices()
+    loadProducers()
   }, [])
 
   useRealtime('policies', () => {
     loadApolices()
   })
 
-  // Simulated AI PDF Data Extraction mapping to the requested Allianz Auto format
+  // Simulated AI PDF Data Extraction mapping to the requested format
   const extractPdfData = async (file: File): Promise<ReviewData> => {
     return new Promise((resolve) => {
       setTimeout(() => {
@@ -91,12 +104,16 @@ export default function PainelControle() {
           clientDocument: '01.584.045/0001-13',
           clientEmail: 'corretorvip2017@gmail.com',
           insurerName: 'Allianz Seguros S.A.',
-          policyNumber: '137916234',
-          startDate: '2026-05-09',
-          endDate: '2027-05-09',
+          policyNumber: '137916234-' + Math.floor(Math.random() * 1000),
+          startDate: new Date().toISOString().split('T')[0],
+          endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1))
+            .toISOString()
+            .split('T')[0],
           premium: '3680.10',
           installmentsCount: '10',
           installmentValue: '368.01',
+          producerId: 'none',
+          commissionPercentage: '15',
         })
       }, 1500)
     })
@@ -203,7 +220,10 @@ export default function PainelControle() {
       formData.append('start_date', new Date(data.startDate + 'T12:00:00Z').toISOString())
       formData.append('end_date', new Date(data.endDate + 'T12:00:00Z').toISOString())
       formData.append('total_premium', data.premium)
-      formData.append('status', 'pending')
+      formData.append('status', 'active')
+      if (data.producerId && data.producerId !== 'none') {
+        formData.append('producer', data.producerId)
+      }
       if (data.file) {
         formData.append('document_file', data.file)
       }
@@ -224,9 +244,18 @@ export default function PainelControle() {
         })
       }
 
+      // 5. Commissions
+      const comPercent = parseFloat(data.commissionPercentage) || 0
+      const comAmount = parseFloat(data.premium) * (comPercent / 100)
+      await pb.collection('commissions').create({
+        policy: policy.id,
+        amount: comAmount,
+        status: 'pending',
+      })
+
       toast({
         title: 'Importação Concluída',
-        description: `Apólice ${data.policyNumber} registrada com sucesso.`,
+        description: `Apólice ${data.policyNumber} registrada. Cliente, Seguradora, ${count} parcelas e comissão gerados.`,
       })
 
       setReviewQueue((prev) => prev.slice(1)) // Remove processed item
@@ -257,13 +286,13 @@ export default function PainelControle() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="bg-[#2ECC71] text-white hover:bg-[#2ECC71]">Vigente</Badge>
+        return <Badge className="bg-[#2ECC71] text-white hover:bg-[#2ECC71]/90">Vigente</Badge>
       case 'pending':
-        return <Badge className="bg-blue-400 text-white hover:bg-blue-400">Pendente</Badge>
+        return <Badge className="bg-blue-400 text-white hover:bg-blue-400/90">Pendente</Badge>
       case 'canceled':
-        return <Badge className="bg-[#E74C3C] text-white hover:bg-[#E74C3C]">Cancelada</Badge>
+        return <Badge className="bg-[#E74C3C] text-white hover:bg-[#E74C3C]/90">Cancelada</Badge>
       case 'expired':
-        return <Badge className="bg-[#9B59B6] text-white hover:bg-[#9B59B6]">Renovação</Badge>
+        return <Badge className="bg-[#9B59B6] text-white hover:bg-[#9B59B6]/90">Renovação</Badge>
       default:
         return <Badge variant="outline">{status}</Badge>
     }
@@ -314,7 +343,7 @@ export default function PainelControle() {
                 selecionar.
               </p>
               <p className="text-xs text-nexus-gold font-medium bg-nexus-navy/5 px-3 py-1 rounded-full">
-                Extração automática de Cliente, Seguradora e Parcelas
+                Extração automática de Cliente, Seguradora, Parcelas e Comissões
               </p>
             </div>
           )}
@@ -435,7 +464,7 @@ export default function PainelControle() {
                 </div>
               </div>
 
-              {/* Parcelas */}
+              {/* Condições de Pagamento */}
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider border-b pb-2">
                   Condições de Pagamento
@@ -461,10 +490,40 @@ export default function PainelControle() {
                     />
                   </div>
                 </div>
-                <p className="text-xs text-gray-500">
-                  As datas de vencimento serão calculadas mensalmente a partir da data de início da
-                  vigência.
-                </p>
+              </div>
+
+              {/* Comissões e Produtor */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider border-b pb-2">
+                  Comissionamento
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Percentual de Comissão (%)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={currentReview.commissionPercentage}
+                      onChange={(e) => updateReviewField('commissionPercentage', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Produtor Associado</Label>
+                    <select
+                      value={currentReview.producerId}
+                      onChange={(e) => updateReviewField('producerId', e.target.value)}
+                      className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="none">Nenhum</option>
+                      {producers.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name || p.email}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
             </form>
           )}
@@ -513,6 +572,7 @@ export default function PainelControle() {
                 <TableHead className="w-[100px] px-6 py-4">Proposta</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Seguradora</TableHead>
+                <TableHead>Produtor</TableHead>
                 <TableHead>Data Início</TableHead>
                 <TableHead className="text-right">Prêmio Total</TableHead>
                 <TableHead className="text-center px-6">Status</TableHead>
@@ -529,6 +589,7 @@ export default function PainelControle() {
                     <TableCell className="font-medium px-6 py-4">{apolice.id}</TableCell>
                     <TableCell className="font-medium text-gray-900">{apolice.cliente}</TableCell>
                     <TableCell>{apolice.seguradora}</TableCell>
+                    <TableCell>{apolice.produtor}</TableCell>
                     <TableCell>{apolice.data}</TableCell>
                     <TableCell className="text-right font-mono text-gray-600">
                       R$ {apolice.premio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -556,7 +617,7 @@ export default function PainelControle() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-gray-500">
+                  <TableCell colSpan={8} className="text-center py-12 text-gray-500">
                     <div className="flex flex-col items-center justify-center">
                       <FileText className="h-10 w-10 text-gray-300 mb-2" />
                       <p>Nenhuma apólice encontrada.</p>

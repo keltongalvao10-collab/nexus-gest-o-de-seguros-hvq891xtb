@@ -24,13 +24,24 @@ export function DashboardCharts() {
 
   const loadData = async () => {
     try {
-      const policies = await pb.collection('policies').getFullList({ expand: 'insurer' })
+      const [policies, commissions] = await Promise.all([
+        pb.collection('policies').getFullList({ expand: 'insurer' }),
+        pb.collection('commissions').getFullList(),
+      ])
 
       const monthlyData: Record<
         string,
         { name: string; producao: number; comissao: number; date: Date }
       > = {}
       const insurerData: Record<string, number> = {}
+
+      const comissoesByPolicy = commissions.reduce(
+        (acc, c) => {
+          acc[c.policy] = (acc[c.policy] || 0) + c.amount
+          return acc
+        },
+        {} as Record<string, number>,
+      )
 
       policies.forEach((p) => {
         // Bar Chart Data
@@ -49,8 +60,7 @@ export function DashboardCharts() {
 
         const premium = p.total_premium || 0
         monthlyData[monthKey].producao += premium
-        // Mock commission as 15% of total premium for display purposes
-        monthlyData[monthKey].comissao += premium * 0.15
+        monthlyData[monthKey].comissao += comissoesByPolicy[p.id] || 0
 
         // Pie Chart Data
         const insurerName = p.expand?.insurer?.name || 'Desconhecida'
@@ -77,6 +87,7 @@ export function DashboardCharts() {
   }, [])
 
   useRealtime('policies', loadData)
+  useRealtime('commissions', loadData)
 
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7 mb-8">

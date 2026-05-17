@@ -7,6 +7,10 @@ import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import Login from './pages/Login'
 import Index from './pages/Index'
 import PainelControle from './pages/PainelControle'
+import Clientes from './pages/Clientes'
+import Seguradoras from './pages/Seguradoras'
+import Parcelas from './pages/Parcelas'
+import Comissoes from './pages/Comissoes'
 import NotFound from './pages/NotFound'
 
 const PlaceholderPage = ({ title }: { title: string }) => (
@@ -44,11 +48,11 @@ const App = () => (
               <Route path="/painel-de-controle" element={<PainelControle />} />
 
               {/* Placeholders for other routes defined in the specification */}
-              <Route path="/parcelas" element={<PlaceholderPage title="Parcelas" />} />
-              <Route path="/comissoes" element={<PlaceholderPage title="Comissões" />} />
+              <Route path="/parcelas" element={<Parcelas />} />
+              <Route path="/comissoes" element={<Comissoes />} />
               <Route path="/extratos" element={<PlaceholderPage title="Extratos" />} />
-              <Route path="/clientes" element={<PlaceholderPage title="Clientes" />} />
-              <Route path="/seguradoras" element={<PlaceholderPage title="Seguradoras" />} />
+              <Route path="/clientes" element={<Clientes />} />
+              <Route path="/seguradoras" element={<Seguradoras />} />
               <Route path="/relatorios" element={<PlaceholderPage title="Relatórios" />} />
 
               <Route path="/repasses" element={<PlaceholderPage title="Repasses" />} />
