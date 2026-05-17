@@ -6,7 +6,7 @@ import Layout from './components/Layout'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import Login from './pages/Login'
 import Index from './pages/Index'
-import Apolices from './pages/Apolices'
+import PainelControle from './pages/PainelControle'
 import NotFound from './pages/NotFound'
 
 const PlaceholderPage = ({ title }: { title: string }) => (
@@ -41,7 +41,7 @@ const App = () => (
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Index />} />
-              <Route path="/apolices" element={<Apolices />} />
+              <Route path="/painel-de-controle" element={<PainelControle />} />
 
               {/* Placeholders for other routes defined in the specification */}
               <Route path="/parcelas" element={<PlaceholderPage title="Parcelas" />} />

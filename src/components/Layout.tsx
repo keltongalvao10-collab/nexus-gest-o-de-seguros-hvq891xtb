@@ -42,7 +42,7 @@ import { Logo } from './Logo'
 
 const menuItems = [
   { title: 'Dashboard', icon: LayoutDashboard, path: '/' },
-  { title: 'Painel de Controle', icon: FileText, path: '/apolices' },
+  { title: 'Painel de Controle', icon: FileText, path: '/painel-de-controle' },
   { title: 'Parcelas', icon: DollarSign, path: '/parcelas' },
   { title: 'Comissões', icon: PieChart, path: '/comissoes' },
   { title: 'Extratos', icon: List, path: '/extratos' },
@@ -119,7 +119,7 @@ export default function Layout() {
             <h1 className="text-xl font-semibold text-gray-800 capitalize">
               {location.pathname === '/'
                 ? 'Dashboard'
-                : location.pathname === '/apolices'
+                : location.pathname === '/painel-de-controle'
                   ? 'Painel de Controle'
                   : location.pathname.slice(1).replace(/-/g, ' ')}
             </h1>
